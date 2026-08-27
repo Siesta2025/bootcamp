@@ -13,8 +13,7 @@ dataset = datasets.CIFAR10(
 )
 
 # 3.
-image = dataset[0][0]
-label = dataset[0][1]
+image, label = dataset[0]
 print(f"Type: {type(image)}")
 print(f"Image shape: {image.shape}")
 print(f"Image data type: {image.dtype}")
