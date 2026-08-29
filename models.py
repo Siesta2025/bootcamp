@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
+from torchvision import transforms
 
 class BasicBlock(nn.Module):
+    # (B, C_in, H, W) -> (B, C_out, H/stride, W/stride)
     def __init__(self, in_channels, out_channels, stride=1):
         super().__init__()
         self.needs_projection = (in_channels != out_channels) or (stride != 1)
@@ -50,6 +52,8 @@ class BasicBlock(nn.Module):
         return out
 
 class SmallResNet(nn.Module):
+    # essentially an encoder, (B, C_in, H, W) -> (B, C_out)
+    # specifically (B, 256)
     def __init__(self):
         super().__init__()
 
@@ -96,29 +100,54 @@ class Classifier(nn.Module):
         logits =  self.head(h)
         return logits
 
+class ProjectionHead(nn.Module):
+    # (B, C_in) -> (B, C_out)
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.linear1 = nn.Linear(in_dim, in_dim)
+        self.relu = nn.ReLU(inplace=True)
+        self.linear2 = nn.Linear(in_dim, out_dim)
+    
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.linear2(x)
+        return x 
+    
+class SimCLRModel(nn.Module):
+    def __init__(self, encoder, projector):
+        super().__init__()
+        self.encoder = encoder
+        self.projector = projector
+    
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.projector(x)
+        return x
+
+class TwoViewDataset:
+    def __init__(self, transform1, transform2):
+        self.transform1 = transform1
+        self.transform2 = transform2
+    
+    def __call__(self, image, label):
+        view1 = self.transform1(image)
+        view2 = self.transform2(image)
+        return (view1, view2, label)
+
+
 if __name__ == "__main__":
     x = torch.randn(8, 3, 32, 32)
-    labels = torch.randint(0, 10, (8,))
+    y = torch.randint(0, 100, (8, ))
 
-    encoder = SmallResNet()
-    model = Classifier(encoder)
+    transform1 = transforms.RandomCrop(32, padding=4)
+    transform2 = transforms.RandomHorizontalFlip(p=0.5)
 
-    optimizer = torch.optim.SGD(
-        model.parameters(),
-        lr=0.1,
-        momentum=0.9,
-    )
-    optimizer.zero_grad()
+    twoview = TwoViewDataset(transform1, transform2)
+    output = twoview(x, y)
 
-    logits = model(x)
+    print(output)
 
-    criterion = nn.CrossEntropyLoss()
-    loss = criterion(logits, labels)
-
-    loss.backward()
-    optimizer.step()
-
-    print("loss:", loss.item())
 
 
 

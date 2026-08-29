@@ -3,9 +3,10 @@ import numpy as np
 import random
 import argparse
 import csv
+import json
 from pathlib import Path
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
 from models import Classifier, SmallResNet
@@ -43,9 +44,9 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 def evaluate(model, loader, criterion, device):
     model.eval()
 
-    test_running_loss = 0.0
-    test_correct = 0
-    test_total = 0
+    running_loss = 0.0
+    correct = 0
+    total = 0
 
     with torch.inference_mode():
         for images, labels in loader:
@@ -56,22 +57,22 @@ def evaluate(model, loader, criterion, device):
 
             loss = criterion(logits, labels)
 
-            test_running_loss += loss.item() * images.size(0)
+            running_loss += loss.item() * images.size(0)
 
             predictions = logits.argmax(dim=1)
-            test_correct += (predictions == labels).sum().item()
-            test_total += labels.size(0)
+            correct += (predictions == labels).sum().item()
+            total += labels.size(0)
 
-    test_loss = test_running_loss / test_total
-    test_accuracy = test_correct / test_total
-    return test_loss, test_accuracy
+    loss = running_loss / total
+    accuracy = correct / total
+    return loss, accuracy
 
-def save_checkpoint(path, epoch, model, optimizer, best_accuracy, scheduler):
+def save_checkpoint(path, epoch, model, optimizer, best_val_accuracy, scheduler):
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
-        "best_accuracy": best_accuracy,
+        "best_val_accuracy": best_val_accuracy,
         "scheduler_state_dict": scheduler.state_dict(),
     }
     torch.save(checkpoint, path)
@@ -82,8 +83,8 @@ def load_checkpoint(path, model, optimizer, device, scheduler):
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
     start_epoch = checkpoint["epoch"] + 1
-    best_accuracy = checkpoint["best_accuracy"]
-    return start_epoch, best_accuracy
+    best_val_accuracy = checkpoint["best_val_accuracy"]
+    return start_epoch, best_val_accuracy
 
 def set_seed(seed):
     random.seed(seed)
@@ -124,12 +125,35 @@ def parse_args():
     parser.add_argument(
         "--num_epochs",
         type=int,
-        default=5,
+        default=30,
     )
     parser.add_argument(
-        "--run-name",
+        "--run_name",
         type=str,
         default="training",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        choices=["last", "best"],
+        default=None,
+    )
+    parser.add_argument(
+        "--augmentation",
+        type=str,
+        choices=["none", "basic"],
+        default="none",
+    )
+    parser.add_argument(
+        "--milestones",
+        type=int,
+        nargs="+",
+        default=[20, 25],
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.1,
     )
     return parser.parse_args()
 
@@ -142,36 +166,66 @@ if __name__ == "__main__":
     momentum = args.momentum
     num_epochs = args.num_epochs
     run_name = args.run_name
-    assert (Path("./checkpoints") / run_name).exists() == False, f"Run name '{run_name}' already exists. Please choose a different run name."
+    resume = args.resume
+    augmentation = args.augmentation
+    milestones = args.milestones
+    gamma = args.gamma
 
+    path = Path("./outputs") / run_name
+
+    if resume is None:
+        assert not path.exists(), f"Run name '{run_name}' already exists. Please choose a different run name."
+
+    elif resume == "last":
+        assert path.exists(), f"Run name '{run_name}' does not exist. Please choose a valid run name to resume training."
+    
+    else:
+        assert path.exists(), f"Run name '{run_name}' does not exist. Please choose a valid run name to resume training."
+    
     set_seed(seed)
 
-    path = Path("./checkpoints") / run_name
-    path.mkdir(parents=True, exist_ok=True)
-    
-    metric_path = path / "metrics.csv"
-    if not metric_path.exists():
-        with open(metric_path, mode="a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["epoch", "lr", "train_loss", "train_accuracy", "test_loss", "test_accuracy"])
-
-    start_epoch = 0
-    best_accuracy = 0.0
-    last_checkpoint_path = path / "last.pt"
-    best_checkpoint_path = path / "best.pt"
-    resume_last = False
-    resume_best = False
-    assert not (resume_last and resume_best), "Cannot resume both last and best checkpoints simultaneously."
+    generator = torch.Generator().manual_seed(seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    transform = transforms.ToTensor()
+    val_test_transform = transforms.ToTensor()
+    if augmentation == "basic":
+        train_transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ToTensor(),
+        ]) 
+    else:
+        train_transform = transforms.ToTensor()
 
-    train_dataset = datasets.CIFAR10(
+    full_train_dataset = datasets.CIFAR10(
         root="./data",
         train=True,
-        transform=transform,
+        transform=train_transform,
         download=True,
+    )
+
+    full_val_dataset = datasets.CIFAR10(
+        root="./data",
+        train=True,
+        transform=val_test_transform,
+        download=True,    
+    )
+
+    indices = torch.randperm(
+        50000,
+        generator=generator,
+    )
+    train_indices = indices[:45000]
+    val_indices = indices[45000:]
+
+    train_dataset = Subset(
+        full_train_dataset,
+        train_indices,
+    )
+    val_dataset = Subset(
+        full_val_dataset,
+        val_indices,
     )
 
     train_loader = DataLoader(
@@ -181,10 +235,17 @@ if __name__ == "__main__":
         num_workers=num_workers,
     )
 
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
+
     test_dataset = datasets.CIFAR10(
         root="./data",
         train=False,
-        transform=transform,
+        transform=val_test_transform,
         download=True,
     )
 
@@ -208,36 +269,73 @@ if __name__ == "__main__":
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer,
-        milestones=[3, 4],
-        gamma=0.1,
+        milestones=milestones,
+        gamma=gamma,
     )
 
-    if resume_last:
-        start_epoch, best_accuracy = load_checkpoint(last_checkpoint_path, model, optimizer, device, scheduler)
-        print(f"Resuming training from epoch {start_epoch} with best accuracy {best_accuracy:.4f}")
-    
-    elif resume_best:
-        start_epoch, best_accuracy = load_checkpoint(best_checkpoint_path, model, optimizer, device, scheduler)
-        print(f"Resuming training from epoch {start_epoch} with best accuracy {best_accuracy:.4f}")
+    last_checkpoint_path = path / "last.pt"
+    best_checkpoint_path = path / "best.pt"
+
+    if resume is None:
+        path.mkdir(parents=True)
+
+        start_epoch = 0
+        best_val_accuracy = 0.0
+
+        config = vars(args).copy()
+        config["device"] = str(device)
+        config["dataset"] = "CIFAR10"
+        config["criterion"] = "CrossEntropyLoss"
+        config["optimizer"] = "SGD"
+        config["scheduler"] = "MultiStepLR"
+        config["scheduler_milestones"] = [3, 4]
+        config["scheduler_gamma"] = 0.1
+        if augmentation == "basic":
+            config["train_transform"] = "RandomCrop(32, padding=4)+RandomHorizontalFlip(0.5)+ToTensor"
+        else:
+            config["train_transform"] = "ToTensor"
+        with open(path / "config.json", "w") as f:
+            json.dump(config, f, indent=4)
+
+    elif resume == "last":        
+        start_epoch, best_val_accuracy = load_checkpoint(last_checkpoint_path, model, optimizer, device, scheduler)
+        print(f"Resuming training from epoch {start_epoch} with best accuracy {best_val_accuracy:.4f}")
+
+    else:
+        start_epoch, best_val_accuracy = load_checkpoint(best_checkpoint_path, model, optimizer, device, scheduler)
+        print(f"Resuming training from epoch {start_epoch} with best accuracy {best_val_accuracy:.4f}")
+
+    metric_path = path / "metrics.csv"
+    if not metric_path.exists():
+        with open(metric_path, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["epoch", "lr", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
     for epoch in range(start_epoch, num_epochs):
         train_loss, train_accuracy = train_one_epoch(model, train_loader, criterion, optimizer, device)
         print(f"epoch: {epoch+1}, training loss: {train_loss:.4f}, training accuracy: {train_accuracy:.4f}")
 
-        test_loss, test_accuracy = evaluate(model, test_loader, criterion, device)
-        print(f"epoch: {epoch+1}, test loss: {test_loss:.4f}, test accuracy: {test_accuracy:.4f}")
+        val_loss, val_accuracy = evaluate(model, val_loader, criterion, device)
+        print(f"epoch: {epoch+1}, validation loss: {val_loss:.4f}, validation accuracy: {val_accuracy:.4f}")
         
         current_lr = optimizer.param_groups[0]['lr']
         print(f"Current learning rate: {current_lr:.6f}")
         scheduler.step()
 
-        if test_accuracy > best_accuracy:
-            best_accuracy = test_accuracy
-            save_checkpoint(best_checkpoint_path, epoch, model, optimizer, best_accuracy, scheduler)
-            print(f"New best accuracy: {best_accuracy:.4f}. Checkpoint saved.")
-        save_checkpoint(last_checkpoint_path, epoch, model, optimizer, best_accuracy, scheduler)
+        if val_accuracy > best_val_accuracy:
+            best_val_accuracy = val_accuracy
+            save_checkpoint(best_checkpoint_path, epoch, model, optimizer, best_val_accuracy, scheduler)
+            print(f"New best accuracy: {best_val_accuracy:.4f}. Checkpoint saved.")
+
+        save_checkpoint(last_checkpoint_path, epoch, model, optimizer, best_val_accuracy, scheduler)
         print(f"Checkpoint saved for epoch {epoch+1}.")
 
         with open(metric_path, mode='a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([epoch+1, current_lr, train_loss, train_accuracy, test_loss, test_accuracy])
+            writer.writerow([epoch+1, current_lr, train_loss, train_accuracy, val_loss, val_accuracy])
+
+    load_checkpoint(best_checkpoint_path, model, optimizer, device, scheduler)
+    print(f"Loading best checkpoint for formal testing.")
+
+    test_loss, test_accuracy = evaluate(model, test_loader, criterion, device)
+    print(f"test loss: {test_loss:.4f}, test_accuracy: {test_accuracy:.4f}.")
