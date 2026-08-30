@@ -9,7 +9,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
-from models import Classifier, SmallResNet
+from models import Classifier, SmallResNet, TwoViewTransform
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
@@ -339,3 +339,4 @@ if __name__ == "__main__":
 
     test_loss, test_accuracy = evaluate(model, test_loader, criterion, device)
     print(f"test loss: {test_loss:.4f}, test_accuracy: {test_accuracy:.4f}.")
+

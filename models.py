@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
-from torchvision import transforms
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 class BasicBlock(nn.Module):
     # (B, C_in, H, W) -> (B, C_out, H/stride, W/stride)
@@ -125,31 +127,32 @@ class SimCLRModel(nn.Module):
         x = self.projector(x)
         return x
 
-class TwoViewDataset:
-    def __init__(self, transform1, transform2):
-        self.transform1 = transform1
-        self.transform2 = transform2
+
+
+
     
-    def __call__(self, image, label):
-        view1 = self.transform1(image)
-        view2 = self.transform2(image)
-        return (view1, view2, label)
 
 
-if __name__ == "__main__":
-    x = torch.randn(8, 3, 32, 32)
-    y = torch.randint(0, 100, (8, ))
+    (view1_batch, view2_batch), labels = next(iter(loader))
 
-    transform1 = transforms.RandomCrop(32, padding=4)
-    transform2 = transforms.RandomHorizontalFlip(p=0.5)
+    print("view1_batch:", view1_batch.shape) # (8, 3, 32, 32)
+    print("view2_batch:", view2_batch.shape) # the same
+    print("labels", labels.shape) # (8)
 
-    twoview = TwoViewDataset(transform1, transform2)
-    output = twoview(x, y)
+    encoder = SmallResNet()
+    projector = ProjectionHead(256, 128)
+    model = SimCLRModel(encoder, projector)
 
-    print(output)
+    z1 = model(view1_batch)
+    z2 = model(view2_batch)
+    print("z1 & z2 shape:", z1.shape)
+    z = torch.cat([z1, z2], dim=0)
+    z = F.normalize(z, dim=1)
+    print("z shape:", z.shape)
+    print("normalization result:", z.norm(dim=1))
 
-
-
-
+    similarity = z @ z.T
+    print("similarity matrix shape:", similarity.shape)
+    print("diagonals:", similarity.diag())
 
 
