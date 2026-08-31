@@ -129,30 +129,3 @@ class SimCLRModel(nn.Module):
 
 
 
-
-    
-
-
-    (view1_batch, view2_batch), labels = next(iter(loader))
-
-    print("view1_batch:", view1_batch.shape) # (8, 3, 32, 32)
-    print("view2_batch:", view2_batch.shape) # the same
-    print("labels", labels.shape) # (8)
-
-    encoder = SmallResNet()
-    projector = ProjectionHead(256, 128)
-    model = SimCLRModel(encoder, projector)
-
-    z1 = model(view1_batch)
-    z2 = model(view2_batch)
-    print("z1 & z2 shape:", z1.shape)
-    z = torch.cat([z1, z2], dim=0)
-    z = F.normalize(z, dim=1)
-    print("z shape:", z.shape)
-    print("normalization result:", z.norm(dim=1))
-
-    similarity = z @ z.T
-    print("similarity matrix shape:", similarity.shape)
-    print("diagonals:", similarity.diag())
-
-
