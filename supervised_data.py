@@ -1,34 +1,35 @@
-from torchvision import datasets, transforms
+from torchvision import datasets
 from torch.utils.data import DataLoader
 
-transform = transforms.ToTensor()
 
-dataset = datasets.CIFAR10(
-    root="./data",
-    train=True,
-    transform=transform,
-    download=True,
-)
+def get_train_val_dataset(path, transform):
+    dataset = datasets.CIFAR10(
+        root=path,
+        train=True,
+        transform=transform,
+        download=True,
+    )
 
-image, label = dataset[0]
-print(f"Type: {type(image)}")
-print(f"Image shape: {image.shape}")
-print(f"Image data type: {image.dtype}")
-print(f"Image min value: {image.min()}")
-print(f"Image max value: {image.max()}")
-print(f"Label: {label}")
-print(f"Label type: {type(label)}")
+    return dataset
 
-dataloader = DataLoader(
-    dataset, 
-    batch_size=8, 
-    shuffle=True, 
-    num_workers=0,
-)
 
-images, labels = next(iter(dataloader))
+def get_test_dataset(path, transform):
+    dataset = datasets.CIFAR10(
+        root=path,
+        train=False,
+        transform=transform,
+        download=True,
+    )
 
-print(f"Images shape: {images.shape}")
-print(f"Images data type: {images.dtype}")
-print(f"Labels shape: {labels.shape}")
-print(f"Labels data type: {labels.dtype}")
+    return dataset
+
+
+def load_data(dataset, shuffle, batch_size=8, num_workers=0):
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+    )
+
+    return dataloader

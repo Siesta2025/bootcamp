@@ -1,68 +1,123 @@
 import torch
 import numpy as np
 import random
+import torch.nn as nn
 import argparse
 import csv
 import json
 from pathlib import Path
-from torch import nn
-from torch.utils.data import Subset
-from torchvision import transforms
+from torchvision import transforms, datasets
+from torch.utils.data import DataLoader, Subset
+from linear_probe import LinearProbe
+from models import SmallResNet
 
-from models import Classifier, SmallResNet
-from supervised_data import get_train_val_dataset, get_test_dataset, load_data
+def load_encoder_checkpoint(encoder, path):
+    checkpoint = torch.load(
+        path,
+        map_location="cpu",
+    )
 
-def train_one_epoch(model, loader, criterion, optimizer, device):
-    model.train()
+    state_dict = checkpoint["model_state_dict"]
 
-    train_running_loss = 0.0
-    train_correct = 0
-    train_total = 0
+    encoder_dict = {}
 
-    for images, labels in loader:
-        images = images.to(device)
-        labels = labels.to(device)
+    for key in state_dict.keys():
+        if key.startswith("encoder."):
+            encoder_dict[key[len("encoder."):]] = state_dict[key]
+
+    encoder.load_state_dict(encoder_dict)
+    return encoder
+
+def initialize_linear_probe(encoder, num_classes=10):
+    prober = LinearProbe(encoder, num_classes=num_classes)
+    for param in prober.frozen_encoder.parameters():
+        assert param.requires_grad is False
+    for param in prober.classifier.parameters():
+        assert param.requires_grad is True
+    return prober
+
+def get_train_val_dataset(path):
+    transform = transforms.ToTensor()
+
+    dataset = datasets.CIFAR10(
+        root=path,
+        train=True,
+        transform=transform,
+        download=True,
+    )
+    return dataset
+
+def get_test_dataset(path):
+    transform = transforms.ToTensor()
+
+    dataset = datasets.CIFAR10(
+        root=path,
+        train=False,
+        transform=transform,
+        download=True,
+    )
+    return dataset
+
+def load_data(dataset, shuffle, batch_size=8, num_workers=0):
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+    )
+    return loader
+
+def train_one_epoch(prober, loader, optimizer, criterion, device):
+    prober.to(device)
+    prober.frozen_encoder.eval()
+    prober.classifier.train()
+
+    running_loss = 0.0
+    total = 0
+    correct = 0
+
+    for x, label in loader:
+        x = x.to(device)
+        label = label.to(device)
 
         optimizer.zero_grad()
 
-        logits = model(images)
+        output = prober(x)
 
-        loss = criterion(logits, labels)
+        loss = criterion(output, label)
         loss.backward()
 
         optimizer.step()
 
-        train_running_loss += loss.item() * images.size(0)
+        running_loss += loss.item() * x.size(0)
+        total += x.size(0)
+        correct += (output.argmax(dim=1) == label).sum().item()
 
-        predictions = logits.argmax(dim=1)
-        train_correct += (predictions == labels).sum().item()
-        train_total += labels.size(0)
+    loss = running_loss / total
+    accuracy = correct / total
+    return loss, accuracy
 
-    train_loss = train_running_loss / train_total
-    train_accuracy = train_correct / train_total
-    return train_loss, train_accuracy
-
-def evaluate(model, loader, criterion, device):
-    model.eval()
+def evaluate(prober, loader, criterion, device):
+    prober.to(device)
+    
+    prober.eval()
 
     running_loss = 0.0
-    correct = 0
     total = 0
+    correct = 0
 
     with torch.inference_mode():
-        for images, labels in loader:
-            images = images.to(device)
-            labels = labels.to(device)
+        for x, label in loader:
+            x = x.to(device)
+            label = label.to(device)
 
-            logits = model(images)
+            output = prober(x)
 
-            loss = criterion(logits, labels)
+            loss = criterion(output, label)
 
-            running_loss += loss.item() * images.size(0)
-
-            predictions = logits.argmax(dim=1)
-            correct += (predictions == labels).sum().item()
-            total += labels.size(0)
+            running_loss += loss.item() * x.size(0)
+            total += x.size(0)
+            correct += (output.argmax(dim=1) == label).sum().item()
 
     loss = running_loss / total
     accuracy = correct / total
@@ -140,12 +195,6 @@ def parse_args():
         default=None,
     )
     parser.add_argument(
-        "--augmentation",
-        type=str,
-        choices=["none", "basic"],
-        default="none",
-    )
-    parser.add_argument(
         "--milestones",
         type=int,
         nargs="+",
@@ -155,6 +204,17 @@ def parse_args():
         "--gamma",
         type=float,
         default=0.1,
+    )
+    parser.add_argument(
+        "--num_classes",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--encoder_name",
+        type=str,
+        choices=["random", "simclr", "supervised"],
+        default="simclr",
     )
     return parser.parse_args()
 
@@ -168,9 +228,10 @@ if __name__ == "__main__":
     num_epochs = args.num_epochs
     run_name = args.run_name
     resume = args.resume
-    augmentation = args.augmentation
     milestones = args.milestones
     gamma = args.gamma
+    num_classes = args.num_classes
+    encoder_name = args.encoder_name
 
     path = Path("./outputs") / run_name
 
@@ -189,19 +250,9 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    val_test_transform = transforms.ToTensor()
-    if augmentation == "basic":
-        train_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.ToTensor(),
-        ]) 
-    else:
-        train_transform = transforms.ToTensor()
+    train_val_dataset = get_train_val_dataset("./data")
 
-    full_train_dataset = get_train_val_dataset("./data", train_transform)
-
-    full_val_dataset = get_train_val_dataset("./data", val_test_transform)
+    test_dataset = get_test_dataset("./data")
 
     indices = torch.randperm(
         50000,
@@ -211,11 +262,11 @@ if __name__ == "__main__":
     val_indices = indices[45000:]
 
     train_dataset = Subset(
-        full_train_dataset,
+        train_val_dataset,
         train_indices,
     )
     val_dataset = Subset(
-        full_val_dataset,
+        train_val_dataset,
         val_indices,
     )
 
@@ -233,8 +284,6 @@ if __name__ == "__main__":
         num_workers=num_workers,
     )
 
-    test_dataset = get_test_dataset("./data", val_test_transform)
-
     test_loader = load_data(
         test_dataset,
         shuffle=False,
@@ -243,12 +292,16 @@ if __name__ == "__main__":
     )
 
     encoder = SmallResNet()
-    model = Classifier(encoder).to(device)
+    if encoder_name == "simclr":
+        load_encoder_checkpoint(encoder, "./outputs/simclr_30/best.pt")
+    elif encoder_name == "supervised":
+        load_encoder_checkpoint(encoder, "./outputs/supervised_30/best.pt")
+    model = initialize_linear_probe(encoder, num_classes=num_classes)
 
     criterion = nn.CrossEntropyLoss()
 
     optimizer = torch.optim.SGD(
-        model.parameters(),
+        model.classifier.parameters(),
         lr=lr,
         momentum=momentum,
     )
@@ -274,10 +327,7 @@ if __name__ == "__main__":
         config["criterion"] = "CrossEntropyLoss"
         config["optimizer"] = "SGD"
         config["scheduler"] = "MultiStepLR"
-        if augmentation == "basic":
-            config["train_transform"] = "RandomCrop(32, padding=4)+RandomHorizontalFlip(0.5)+ToTensor"
-        else:
-            config["train_transform"] = "ToTensor"
+
         with open(path / "config.json", "w") as f:
             json.dump(config, f, indent=4)
 
@@ -323,3 +373,4 @@ if __name__ == "__main__":
 
     test_loss, test_accuracy = evaluate(model, test_loader, criterion, device)
     print(f"test loss: {test_loss:.4f}, test_accuracy: {test_accuracy:.4f}.")
+
