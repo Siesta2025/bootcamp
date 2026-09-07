@@ -1,4 +1,3 @@
-import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
@@ -56,13 +55,3 @@ def load_data(dataset, batch_size):
     )
 
     return loader
-
-if __name__ == "__main__":
-    dataset = datasets.CIFAR10(
-        root="./data",
-        train=True,
-        transform=two_view_transform,
-        download=True,
-    )
-
-    loader = load_data(dataset)

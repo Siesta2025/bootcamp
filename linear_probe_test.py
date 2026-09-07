@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import math
 from torch.utils.data import Subset
-from linear_probe import LinearProbe
-from models import SmallResNet
+from representation_lab.linear_probe import LinearProbe
+from representation_lab.models import SmallResNet
 from linear_probe_train import load_encoder_checkpoint, get_train_val_dataset, get_test_dataset, load_data, train_one_epoch, evaluate
 
 if __name__ == "__main__":

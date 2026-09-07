@@ -8,8 +8,8 @@ import json
 from pathlib import Path
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader, Subset
-from linear_probe import LinearProbe
-from models import SmallResNet
+from representation_lab.linear_probe import LinearProbe
+from representation_lab.models import SmallResNet
 
 def load_encoder_checkpoint(encoder, path):
     checkpoint = torch.load(

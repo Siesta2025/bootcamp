@@ -1,8 +1,8 @@
 import torch
 
-from models import SmallResNet, ProjectionHead, SimCLRModel
+from representation_lab.models import SmallResNet, ProjectionHead, SimCLRModel
 from simclr_train import NTXent
-from simclr_data import get_train_val_dataset, load_data
+from representation_lab.simclr_data import get_train_val_dataset, load_data
 
 # test1
 x = torch.randn(8, 3, 32, 32)

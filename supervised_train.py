@@ -9,8 +9,8 @@ from torch import nn
 from torch.utils.data import Subset
 from torchvision import transforms
 
-from models import Classifier, SmallResNet
-from supervised_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.models import Classifier, SmallResNet
+from representation_lab.supervised_data import get_train_val_dataset, get_test_dataset, load_data
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()

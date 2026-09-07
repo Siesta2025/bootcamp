@@ -1,8 +1,5 @@
 import torch
 import torch.nn as nn
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
-import torch.nn.functional as F
 
 class BasicBlock(nn.Module):
     # (B, C_in, H, W) -> (B, C_out, H/stride, W/stride)

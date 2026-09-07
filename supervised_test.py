@@ -3,8 +3,8 @@ import math
 
 from torchvision import transforms
 from torch.utils.data import Subset
-from supervised_data import get_train_val_dataset, get_test_dataset, load_data
-from models import Classifier, SmallResNet
+from representation_lab.supervised_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.models import Classifier, SmallResNet
 from supervised_train import train_one_epoch, evaluate
 
 # test1: dataset and data loading

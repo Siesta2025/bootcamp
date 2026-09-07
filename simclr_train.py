@@ -10,8 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 
-from models import SimCLRModel, ProjectionHead, SmallResNet
-from simclr_data import get_train_val_dataset
+from representation_lab.models import SimCLRModel, ProjectionHead, SmallResNet
+from representation_lab.simclr_data import get_train_val_dataset
 
 
 class NTXent(nn.Module):
