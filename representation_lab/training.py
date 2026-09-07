@@ -1,5 +1,6 @@
 import torch
 
+
 def train_simclr_one_epoch(
     model,
     loader,
@@ -117,7 +118,7 @@ def evaluate_classifier(model, loader, criterion, device):
     accuracy = correct / total
     return loss, accuracy
 
-def train_linear_probe_one_epoch(prober, loader, optimizer, criterion, device):
+def train_linear_probe_one_epoch(prober, loader, criterion, optimizer, device):
     prober.to(device)
     prober.frozen_encoder.eval()
     prober.classifier.train()

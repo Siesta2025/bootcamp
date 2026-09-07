@@ -5,9 +5,9 @@ from torchvision import transforms
 from torch.utils.data import Subset
 from representation_lab.linear_probe import LinearProbe
 from representation_lab.models import SmallResNet
-from linear_probe_train import load_encoder_checkpoint, get_train_val_dataset, get_test_dataset, load_data
-from representation_lab.classifier_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.classification_data import get_train_val_dataset, get_test_dataset, load_data
 from representation_lab.training import train_linear_probe_one_epoch, evaluate_classifier
+from representation_lab.checkpoints import load_encoder_checkpoint
 
 if __name__ == "__main__":
     # test 1: LinearProbe module, encoder checkpoint loading, encoder freezing
@@ -123,8 +123,8 @@ if __name__ == "__main__":
     train_loss, train_accuracy = train_linear_probe_one_epoch(
         prober,
         temp_train_loader,
-        optimizer,
         criterion,
+        optimizer,
         device
     )
     print("loss1:", train_loss, "acc1:", train_accuracy)
@@ -133,8 +133,8 @@ if __name__ == "__main__":
     train_loss, train_accuracy = train_linear_probe_one_epoch(
         prober,
         temp_train_loader,
-        optimizer,
         criterion,
+        optimizer,
         device
     )
     print("loss2:", train_loss, "acc2:", train_accuracy)
@@ -151,7 +151,7 @@ if __name__ == "__main__":
             val_dataset,
             list(range(16))
         ),
-        shuffle=True,
+        shuffle=False,
         batch_size=8,
         num_workers=0,
     )

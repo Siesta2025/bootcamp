@@ -10,25 +10,9 @@ from torchvision import transforms
 from torch.utils.data import Subset
 from representation_lab.linear_probe import LinearProbe
 from representation_lab.models import SmallResNet
-from representation_lab.classifier_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.classification_data import get_train_val_dataset, get_test_dataset, load_data
 from representation_lab.training import train_linear_probe_one_epoch, evaluate_classifier
-
-def load_encoder_checkpoint(encoder, path):
-    checkpoint = torch.load(
-        path,
-        map_location="cpu",
-    )
-
-    state_dict = checkpoint["model_state_dict"]
-
-    encoder_dict = {}
-
-    for key in state_dict.keys():
-        if key.startswith("encoder."):
-            encoder_dict[key[len("encoder."):]] = state_dict[key]
-
-    encoder.load_state_dict(encoder_dict)
-    return encoder
+from representation_lab.checkpoints import load_encoder_checkpoint
 
 def initialize_linear_probe(encoder, num_classes=10):
     prober = LinearProbe(encoder, num_classes=num_classes)

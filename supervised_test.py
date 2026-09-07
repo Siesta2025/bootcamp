@@ -3,7 +3,7 @@ import math
 
 from torchvision import transforms
 from torch.utils.data import Subset
-from representation_lab.classifier_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.classification_data import get_train_val_dataset, get_test_dataset, load_data
 from representation_lab.models import Classifier, SmallResNet
 from representation_lab.training import train_supervised_one_epoch, evaluate_classifier
 
