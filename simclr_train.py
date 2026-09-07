@@ -6,114 +6,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 
 from representation_lab.models import SimCLRModel, ProjectionHead, SmallResNet
 from representation_lab.simclr_data import get_train_val_dataset
-
-
-class NTXent(nn.Module):
-    def __init__(self, tau=0.7):
-        super().__init__()
-        self.tau = tau
-
-    def forward(self, z1, z2):
-        assert z1.shape == z2.shape, \
-            "Two outputs must have the same shape."
-
-        batch_size = z1.size(0)
-
-        z = torch.cat([z1, z2], dim=0)
-
-        z = F.normalize(z, dim=1)
-
-        logits = z @ z.T
-        logits = logits / self.tau
-
-        self_mask = torch.eye(
-            2 * batch_size,
-            dtype=torch.bool,
-            device=z.device,
-        )
-        logits = logits.masked_fill(
-            self_mask,
-            float("-inf"),
-        )
-
-
-        targets = (
-            torch.arange(
-                2 * batch_size,
-                device=z.device,
-            )
-            + batch_size
-        ) % (2 * batch_size)
-
-        return F.cross_entropy(logits, targets)
-
-
-def train_one_epoch(
-    model,
-    loader,
-    criterion,
-    optimizer,
-    device,
-):
-    model.train()
-
-    running_loss = 0.0
-    total = 0
-
-    for (view1, view2), _ in loader:
-        view1 = view1.to(device)
-        view2 = view2.to(device)
-
-        optimizer.zero_grad()
-
-        z1 = model(view1)
-        z2 = model(view2)
-
-        loss = criterion(z1, z2)
-
-        loss.backward()
-        optimizer.step()
-
-        batch_size = view1.size(0)
-        running_loss += loss.item() * batch_size
-        total += batch_size
-
-    return running_loss / total
-
-
-def evaluate(
-    model,
-    loader,
-    criterion,
-    device,
-):
-    model.eval()
-
-    running_loss = 0.0
-    total = 0
-
-    with torch.inference_mode():
-        for (view1, view2), _ in loader:
-            view1 = view1.to(device)
-            view2 = view2.to(device)
-
-            z1 = model(view1)
-            z2 = model(view2)
-
-            loss = criterion(z1, z2)
-
-            batch_size = view1.size(0)
-            running_loss += loss.item() * batch_size
-            total += batch_size
-
-    return running_loss / total
-
+from representation_lab.losses import NTXent
+from representation_lab.training import train_simclr_one_epoch, evaluate_simclr
 
 def save_checkpoint(
     path,
@@ -415,7 +313,7 @@ if __name__ == "__main__":
         start_epoch,
         args.num_epochs,
     ):
-        train_loss = train_one_epoch(
+        train_loss = train_simclr_one_epoch(
             model,
             train_loader,
             criterion,
@@ -423,7 +321,7 @@ if __name__ == "__main__":
             device,
         )
 
-        val_loss = evaluate(
+        val_loss = evaluate_simclr(
             model,
             val_loader,
             criterion,
