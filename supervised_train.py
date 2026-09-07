@@ -10,63 +10,8 @@ from torch.utils.data import Subset
 from torchvision import transforms
 
 from representation_lab.models import Classifier, SmallResNet
-from representation_lab.supervised_data import get_train_val_dataset, get_test_dataset, load_data
-
-def train_one_epoch(model, loader, criterion, optimizer, device):
-    model.train()
-
-    train_running_loss = 0.0
-    train_correct = 0
-    train_total = 0
-
-    for images, labels in loader:
-        images = images.to(device)
-        labels = labels.to(device)
-
-        optimizer.zero_grad()
-
-        logits = model(images)
-
-        loss = criterion(logits, labels)
-        loss.backward()
-
-        optimizer.step()
-
-        train_running_loss += loss.item() * images.size(0)
-
-        predictions = logits.argmax(dim=1)
-        train_correct += (predictions == labels).sum().item()
-        train_total += labels.size(0)
-
-    train_loss = train_running_loss / train_total
-    train_accuracy = train_correct / train_total
-    return train_loss, train_accuracy
-
-def evaluate(model, loader, criterion, device):
-    model.eval()
-
-    running_loss = 0.0
-    correct = 0
-    total = 0
-
-    with torch.inference_mode():
-        for images, labels in loader:
-            images = images.to(device)
-            labels = labels.to(device)
-
-            logits = model(images)
-
-            loss = criterion(logits, labels)
-
-            running_loss += loss.item() * images.size(0)
-
-            predictions = logits.argmax(dim=1)
-            correct += (predictions == labels).sum().item()
-            total += labels.size(0)
-
-    loss = running_loss / total
-    accuracy = correct / total
-    return loss, accuracy
+from representation_lab.classifier_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.training import train_supervised_one_epoch, evaluate_classifier
 
 def save_checkpoint(path, epoch, model, optimizer, best_val_accuracy, scheduler):
     checkpoint = {
@@ -296,10 +241,10 @@ if __name__ == "__main__":
             writer.writerow(["epoch", "lr", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
     for epoch in range(start_epoch, num_epochs):
-        train_loss, train_accuracy = train_one_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_accuracy = train_supervised_one_epoch(model, train_loader, criterion, optimizer, device)
         print(f"epoch: {epoch+1}, training loss: {train_loss:.4f}, training accuracy: {train_accuracy:.4f}")
 
-        val_loss, val_accuracy = evaluate(model, val_loader, criterion, device)
+        val_loss, val_accuracy = evaluate_classifier(model, val_loader, criterion, device)
         print(f"epoch: {epoch+1}, validation loss: {val_loss:.4f}, validation accuracy: {val_accuracy:.4f}")
         
         current_lr = optimizer.param_groups[0]['lr']
@@ -321,5 +266,5 @@ if __name__ == "__main__":
     load_checkpoint(best_checkpoint_path, model, optimizer, device, scheduler)
     print(f"Loading best checkpoint for formal testing.")
 
-    test_loss, test_accuracy = evaluate(model, test_loader, criterion, device)
+    test_loss, test_accuracy = evaluate_classifier(model, test_loader, criterion, device)
     print(f"test loss: {test_loss:.4f}, test_accuracy: {test_accuracy:.4f}.")

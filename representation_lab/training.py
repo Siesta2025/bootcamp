@@ -59,3 +59,90 @@ def evaluate_simclr(
             total += batch_size
 
     return running_loss / total
+
+def train_supervised_one_epoch(model, loader, criterion, optimizer, device):
+    model.train()
+
+    train_running_loss = 0.0
+    train_correct = 0
+    train_total = 0
+
+    for images, labels in loader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        optimizer.zero_grad()
+
+        logits = model(images)
+
+        loss = criterion(logits, labels)
+        loss.backward()
+
+        optimizer.step()
+
+        train_running_loss += loss.item() * images.size(0)
+
+        predictions = logits.argmax(dim=1)
+        train_correct += (predictions == labels).sum().item()
+        train_total += labels.size(0)
+
+    train_loss = train_running_loss / train_total
+    train_accuracy = train_correct / train_total
+    return train_loss, train_accuracy
+
+def evaluate_classifier(model, loader, criterion, device):
+    model.to(device)
+    model.eval()
+
+    running_loss = 0.0
+    correct = 0
+    total = 0
+
+    with torch.inference_mode():
+        for images, labels in loader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            logits = model(images)
+
+            loss = criterion(logits, labels)
+
+            running_loss += loss.item() * images.size(0)
+
+            predictions = logits.argmax(dim=1)
+            correct += (predictions == labels).sum().item()
+            total += labels.size(0)
+
+    loss = running_loss / total
+    accuracy = correct / total
+    return loss, accuracy
+
+def train_linear_probe_one_epoch(prober, loader, optimizer, criterion, device):
+    prober.to(device)
+    prober.frozen_encoder.eval()
+    prober.classifier.train()
+
+    running_loss = 0.0
+    total = 0
+    correct = 0
+
+    for x, label in loader:
+        x = x.to(device)
+        label = label.to(device)
+
+        optimizer.zero_grad()
+
+        output = prober(x)
+
+        loss = criterion(output, label)
+        loss.backward()
+
+        optimizer.step()
+
+        running_loss += loss.item() * x.size(0)
+        total += x.size(0)
+        correct += (output.argmax(dim=1) == label).sum().item()
+
+    loss = running_loss / total
+    accuracy = correct / total
+    return loss, accuracy

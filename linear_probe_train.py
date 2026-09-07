@@ -6,10 +6,12 @@ import argparse
 import csv
 import json
 from pathlib import Path
-from torchvision import transforms, datasets
-from torch.utils.data import DataLoader, Subset
+from torchvision import transforms
+from torch.utils.data import Subset
 from representation_lab.linear_probe import LinearProbe
 from representation_lab.models import SmallResNet
+from representation_lab.classifier_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.training import train_linear_probe_one_epoch, evaluate_classifier
 
 def load_encoder_checkpoint(encoder, path):
     checkpoint = torch.load(
@@ -35,93 +37,6 @@ def initialize_linear_probe(encoder, num_classes=10):
     for param in prober.classifier.parameters():
         assert param.requires_grad is True
     return prober
-
-def get_train_val_dataset(path):
-    transform = transforms.ToTensor()
-
-    dataset = datasets.CIFAR10(
-        root=path,
-        train=True,
-        transform=transform,
-        download=True,
-    )
-    return dataset
-
-def get_test_dataset(path):
-    transform = transforms.ToTensor()
-
-    dataset = datasets.CIFAR10(
-        root=path,
-        train=False,
-        transform=transform,
-        download=True,
-    )
-    return dataset
-
-def load_data(dataset, shuffle, batch_size=8, num_workers=0):
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-    )
-    return loader
-
-def train_one_epoch(prober, loader, optimizer, criterion, device):
-    prober.to(device)
-    prober.frozen_encoder.eval()
-    prober.classifier.train()
-
-    running_loss = 0.0
-    total = 0
-    correct = 0
-
-    for x, label in loader:
-        x = x.to(device)
-        label = label.to(device)
-
-        optimizer.zero_grad()
-
-        output = prober(x)
-
-        loss = criterion(output, label)
-        loss.backward()
-
-        optimizer.step()
-
-        running_loss += loss.item() * x.size(0)
-        total += x.size(0)
-        correct += (output.argmax(dim=1) == label).sum().item()
-
-    loss = running_loss / total
-    accuracy = correct / total
-    return loss, accuracy
-
-def evaluate(prober, loader, criterion, device):
-    prober.to(device)
-    
-    prober.eval()
-
-    running_loss = 0.0
-    total = 0
-    correct = 0
-
-    with torch.inference_mode():
-        for x, label in loader:
-            x = x.to(device)
-            label = label.to(device)
-
-            output = prober(x)
-
-            loss = criterion(output, label)
-
-            running_loss += loss.item() * x.size(0)
-            total += x.size(0)
-            correct += (output.argmax(dim=1) == label).sum().item()
-
-    loss = running_loss / total
-    accuracy = correct / total
-    return loss, accuracy
 
 def save_checkpoint(path, epoch, model, optimizer, best_val_accuracy, scheduler):
     checkpoint = {
@@ -250,9 +165,11 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    train_val_dataset = get_train_val_dataset("./data")
+    transform = transforms.ToTensor()
 
-    test_dataset = get_test_dataset("./data")
+    train_val_dataset = get_train_val_dataset("./data", transform)
+
+    test_dataset = get_test_dataset("./data", transform)
 
     indices = torch.randperm(
         50000,
@@ -346,10 +263,10 @@ if __name__ == "__main__":
             writer.writerow(["epoch", "lr", "train_loss", "train_accuracy", "val_loss", "val_accuracy"])
 
     for epoch in range(start_epoch, num_epochs):
-        train_loss, train_accuracy = train_one_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_accuracy = train_linear_probe_one_epoch(model, train_loader, criterion, optimizer, device)
         print(f"epoch: {epoch+1}, training loss: {train_loss:.4f}, training accuracy: {train_accuracy:.4f}")
 
-        val_loss, val_accuracy = evaluate(model, val_loader, criterion, device)
+        val_loss, val_accuracy = evaluate_classifier(model, val_loader, criterion, device)
         print(f"epoch: {epoch+1}, validation loss: {val_loss:.4f}, validation accuracy: {val_accuracy:.4f}")
         
         current_lr = optimizer.param_groups[0]['lr']
@@ -371,6 +288,6 @@ if __name__ == "__main__":
     load_checkpoint(best_checkpoint_path, model, optimizer, device, scheduler)
     print(f"Loading best checkpoint for formal testing.")
 
-    test_loss, test_accuracy = evaluate(model, test_loader, criterion, device)
+    test_loss, test_accuracy = evaluate_classifier(model, test_loader, criterion, device)
     print(f"test loss: {test_loss:.4f}, test_accuracy: {test_accuracy:.4f}.")
 

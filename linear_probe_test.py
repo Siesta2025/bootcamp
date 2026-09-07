@@ -1,10 +1,13 @@
 import torch
 import torch.nn as nn
 import math
+from torchvision import transforms
 from torch.utils.data import Subset
 from representation_lab.linear_probe import LinearProbe
 from representation_lab.models import SmallResNet
-from linear_probe_train import load_encoder_checkpoint, get_train_val_dataset, get_test_dataset, load_data, train_one_epoch, evaluate
+from linear_probe_train import load_encoder_checkpoint, get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.classifier_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.training import train_linear_probe_one_epoch, evaluate_classifier
 
 if __name__ == "__main__":
     # test 1: LinearProbe module, encoder checkpoint loading, encoder freezing
@@ -52,8 +55,10 @@ if __name__ == "__main__":
     assert not torch.allclose(classifier_param_sample_before, classifier_param_sample_after)
 
     # test3: data loading
-    train_val_dataset = get_train_val_dataset("./data")
-    test_dataset = get_test_dataset("./data")
+    transform = transforms.ToTensor()
+
+    train_val_dataset = get_train_val_dataset("./data", transform)
+    test_dataset = get_test_dataset("./data", transform)
     indices = torch.randperm(50000)
     train_indices = indices[:45000]
     val_indices = indices[45000:]
@@ -115,7 +120,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    train_loss, train_accuracy = train_one_epoch(
+    train_loss, train_accuracy = train_linear_probe_one_epoch(
         prober,
         temp_train_loader,
         optimizer,
@@ -125,7 +130,7 @@ if __name__ == "__main__":
     print("loss1:", train_loss, "acc1:", train_accuracy)
     assert isinstance(train_loss, float) and math.isfinite(train_loss) and 0<=train_accuracy<=1.0
 
-    train_loss, train_accuracy = train_one_epoch(
+    train_loss, train_accuracy = train_linear_probe_one_epoch(
         prober,
         temp_train_loader,
         optimizer,
@@ -154,7 +159,7 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
 
     before = next(prober.classifier.parameters()).detach().clone()
-    train_loss, train_accuracy = evaluate(
+    train_loss, train_accuracy = evaluate_classifier(
         prober,
         temp_val_loader,
         criterion,

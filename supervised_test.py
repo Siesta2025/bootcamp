@@ -3,9 +3,9 @@ import math
 
 from torchvision import transforms
 from torch.utils.data import Subset
-from representation_lab.supervised_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.classifier_data import get_train_val_dataset, get_test_dataset, load_data
 from representation_lab.models import Classifier, SmallResNet
-from supervised_train import train_one_epoch, evaluate
+from representation_lab.training import train_supervised_one_epoch, evaluate_classifier
 
 # test1: dataset and data loading
 train_dataset = get_train_val_dataset("./data", transforms.ToTensor())
@@ -68,7 +68,7 @@ optimizer = torch.optim.SGD(
 )
 
 before = next(model.parameters()).detach().clone()
-loss, acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
+loss, acc = train_supervised_one_epoch(model, train_loader, criterion, optimizer, device)
 after = next(model.parameters()).detach().clone()
 
 assert isinstance(loss, float) and math.isfinite(loss)
@@ -88,5 +88,5 @@ val_loader = load_data(
 
 criterion = torch.nn.CrossEntropyLoss()
 
-loss, acc = evaluate(model, val_loader, criterion, device)
+loss, acc = evaluate_classifier(model, val_loader, criterion, device)
 assert isinstance(loss, float) and math.isfinite(loss)
