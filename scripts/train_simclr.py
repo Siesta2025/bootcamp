@@ -8,57 +8,14 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 
+from representation_lab.checkpoints import (
+    load_training_checkpoint,
+    save_training_checkpoint,
+)
 from representation_lab.models import SimCLRModel, ProjectionHead, SmallResNet
 from representation_lab.simclr_data import get_train_val_dataset
 from representation_lab.losses import NTXent
 from representation_lab.training import train_simclr_one_epoch, evaluate_simclr
-
-def save_checkpoint(
-    path,
-    epoch,
-    model,
-    optimizer,
-    scheduler,
-    best_val_loss,
-):
-    checkpoint = {
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "scheduler_state_dict": scheduler.state_dict(),
-        "best_val_loss": best_val_loss,
-    }
-
-    torch.save(checkpoint, path)
-
-
-def load_checkpoint(
-    path,
-    model,
-    optimizer,
-    scheduler,
-    device,
-):
-    checkpoint = torch.load(
-        path,
-        map_location=device,
-    )
-
-    model.load_state_dict(
-        checkpoint["model_state_dict"]
-    )
-    optimizer.load_state_dict(
-        checkpoint["optimizer_state_dict"]
-    )
-    scheduler.load_state_dict(
-        checkpoint["scheduler_state_dict"]
-    )
-
-    start_epoch = checkpoint["epoch"] + 1
-    best_val_loss = checkpoint["best_val_loss"]
-
-    return start_epoch, best_val_loss
-
 
 def set_seed(seed):
     random.seed(seed)
@@ -292,12 +249,12 @@ if __name__ == "__main__":
             f"{checkpoint_path}"
         )
 
-        start_epoch, best_val_loss = load_checkpoint(
-            checkpoint_path,
-            model,
-            optimizer,
-            scheduler,
-            device,
+        start_epoch, best_val_loss = load_training_checkpoint(
+            path=checkpoint_path,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=device,
         )
 
         print(
@@ -344,13 +301,13 @@ if __name__ == "__main__":
         if val_loss < best_val_loss:
             best_val_loss = val_loss
 
-            save_checkpoint(
-                best_checkpoint_path,
-                epoch,
-                model,
-                optimizer,
-                scheduler,
-                best_val_loss,
+            save_training_checkpoint(
+                path=best_checkpoint_path,
+                epoch=epoch,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                best_metric=best_val_loss,
             )
 
             print(
@@ -358,13 +315,13 @@ if __name__ == "__main__":
                 f"{best_val_loss:.4f}"
             )
 
-        save_checkpoint(
-            last_checkpoint_path,
-            epoch,
-            model,
-            optimizer,
-            scheduler,
-            best_val_loss,
+        save_training_checkpoint(
+            path=last_checkpoint_path,
+            epoch=epoch,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            best_metric=best_val_loss,
         )
 
         with open(

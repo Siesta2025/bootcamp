@@ -11,26 +11,11 @@ from torchvision import transforms
 
 from representation_lab.models import Classifier, SmallResNet
 from representation_lab.classification_data import get_train_val_dataset, get_test_dataset, load_data
+from representation_lab.checkpoints import (
+    load_training_checkpoint,
+    save_training_checkpoint,
+)
 from representation_lab.training import train_supervised_one_epoch, evaluate_classifier
-
-def save_checkpoint(path, epoch, model, optimizer, best_val_accuracy, scheduler):
-    checkpoint = {
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "best_val_accuracy": best_val_accuracy,
-        "scheduler_state_dict": scheduler.state_dict(),
-    }
-    torch.save(checkpoint, path)
-
-def load_checkpoint(path, model, optimizer, device, scheduler):
-    checkpoint = torch.load(path, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-    start_epoch = checkpoint["epoch"] + 1
-    best_val_accuracy = checkpoint["best_val_accuracy"]
-    return start_epoch, best_val_accuracy
 
 def set_seed(seed):
     random.seed(seed)
@@ -227,11 +212,23 @@ if __name__ == "__main__":
             json.dump(config, f, indent=4)
 
     elif resume == "last":        
-        start_epoch, best_val_accuracy = load_checkpoint(last_checkpoint_path, model, optimizer, device, scheduler)
+        start_epoch, best_val_accuracy = load_training_checkpoint(
+            path=last_checkpoint_path,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=device,
+        )
         print(f"Resuming training from epoch {start_epoch} with best accuracy {best_val_accuracy:.4f}")
 
     else:
-        start_epoch, best_val_accuracy = load_checkpoint(best_checkpoint_path, model, optimizer, device, scheduler)
+        start_epoch, best_val_accuracy = load_training_checkpoint(
+            path=best_checkpoint_path,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=device,
+        )
         print(f"Resuming training from epoch {start_epoch} with best accuracy {best_val_accuracy:.4f}")
 
     metric_path = path / "metrics.csv"
@@ -253,17 +250,37 @@ if __name__ == "__main__":
 
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
-            save_checkpoint(best_checkpoint_path, epoch, model, optimizer, best_val_accuracy, scheduler)
+            save_training_checkpoint(
+                path=best_checkpoint_path,
+                epoch=epoch,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                best_metric=best_val_accuracy,
+            )
             print(f"New best accuracy: {best_val_accuracy:.4f}. Checkpoint saved.")
 
-        save_checkpoint(last_checkpoint_path, epoch, model, optimizer, best_val_accuracy, scheduler)
+        save_training_checkpoint(
+            path=last_checkpoint_path,
+            epoch=epoch,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            best_metric=best_val_accuracy,
+        )
         print(f"Checkpoint saved for epoch {epoch+1}.")
 
         with open(metric_path, mode='a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([epoch+1, current_lr, train_loss, train_accuracy, val_loss, val_accuracy])
 
-    load_checkpoint(best_checkpoint_path, model, optimizer, device, scheduler)
+    load_training_checkpoint(
+        path=best_checkpoint_path,
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        device=device,
+    )
     print(f"Loading best checkpoint for formal testing.")
 
     test_loss, test_accuracy = evaluate_classifier(model, test_loader, criterion, device)
