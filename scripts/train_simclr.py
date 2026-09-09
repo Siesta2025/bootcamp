@@ -12,6 +12,7 @@ from representation_lab.checkpoints import (
     load_training_checkpoint,
     save_training_checkpoint,
 )
+from representation_lab.logging_utils import setup_logger
 from representation_lab.models import SimCLRModel, ProjectionHead, SmallResNet
 from representation_lab.simclr_data import get_train_val_dataset
 from representation_lab.losses import NTXent
@@ -200,6 +201,13 @@ if __name__ == "__main__":
     if args.resume is None:
         path.mkdir(parents=True)
 
+    logger = setup_logger(name=__name__, log_path=path / "train.log")
+    logger.info(
+        f"run_started run_name={args.run_name} device={device} "
+        f"resume={args.resume}"
+    )
+
+    if args.resume is None:
         start_epoch = 0
         best_val_loss = float("inf")
 
@@ -237,6 +245,8 @@ if __name__ == "__main__":
                 "val_loss",
             ])
 
+        logger.info(f"config_saved path={path / 'config.json'}")
+
     else:
         checkpoint_path = (
             last_checkpoint_path
@@ -257,9 +267,10 @@ if __name__ == "__main__":
             device=device,
         )
 
-        print(
-            f"Resuming from epoch {start_epoch}, "
-            f"best val loss = {best_val_loss:.4f}"
+        logger.info(
+            f"training_resumed checkpoint={checkpoint_path} "
+            f"start_epoch={start_epoch} "
+            f"best_val_loss={best_val_loss:.4f}"
         )
 
     # -------------------------
@@ -289,11 +300,11 @@ if __name__ == "__main__":
             optimizer.param_groups[0]["lr"]
         )
 
-        print(
-            f"epoch: {epoch + 1}, "
-            f"train loss: {train_loss:.4f}, "
-            f"val loss: {val_loss:.4f}, "
-            f"lr: {current_lr:.6f}"
+        logger.info(
+            f"epoch_complete epoch={epoch + 1} "
+            f"lr={current_lr:.6f} "
+            f"train_loss={train_loss:.4f} "
+            f"val_loss={val_loss:.4f}"
         )
 
         scheduler.step()
@@ -310,9 +321,10 @@ if __name__ == "__main__":
                 best_metric=best_val_loss,
             )
 
-            print(
-                f"New best val loss: "
-                f"{best_val_loss:.4f}"
+            logger.info(
+                f"best_checkpoint_saved epoch={epoch + 1} "
+                f"val_loss={best_val_loss:.4f} "
+                f"path={best_checkpoint_path}"
             )
 
         save_training_checkpoint(
@@ -322,6 +334,11 @@ if __name__ == "__main__":
             optimizer=optimizer,
             scheduler=scheduler,
             best_metric=best_val_loss,
+        )
+
+        logger.info(
+            f"last_checkpoint_saved epoch={epoch + 1} "
+            f"path={last_checkpoint_path}"
         )
 
         with open(
@@ -337,7 +354,6 @@ if __name__ == "__main__":
                 val_loss,
             ])
 
-    print(
-        "SimCLR pretraining finished. "
-        f"Best validation loss: {best_val_loss:.4f}"
+    logger.info(
+        f"run_complete best_val_loss={best_val_loss:.4f}"
     )

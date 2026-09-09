@@ -17,6 +17,7 @@ from representation_lab.checkpoints import (
     load_training_checkpoint,
     save_training_checkpoint,
 )
+from representation_lab.logging_utils import setup_logger
 
 def initialize_linear_probe(encoder, num_classes=10):
     prober = LinearProbe(encoder, num_classes=num_classes)
@@ -204,6 +205,13 @@ if __name__ == "__main__":
     if resume is None:
         path.mkdir(parents=True)
 
+    logger = setup_logger(name=__name__, log_path=path / "train.log")
+    logger.info(
+        f"run_started run_name={run_name} device={device} "
+        f"resume={resume} encoder={encoder_name}"
+    )
+
+    if resume is None:
         start_epoch = 0
         best_val_accuracy = 0.0
 
@@ -217,7 +225,9 @@ if __name__ == "__main__":
         with open(path / "config.json", "w") as f:
             json.dump(config, f, indent=4)
 
-    elif resume == "last":        
+        logger.info(f"config_saved path={path / 'config.json'}")
+
+    elif resume == "last":
         start_epoch, best_val_accuracy = load_training_checkpoint(
             path=last_checkpoint_path,
             model=model,
@@ -225,7 +235,11 @@ if __name__ == "__main__":
             scheduler=scheduler,
             device=device,
         )
-        print(f"Resuming training from epoch {start_epoch} with best accuracy {best_val_accuracy:.4f}")
+        logger.info(
+            f"training_resumed checkpoint={last_checkpoint_path} "
+            f"start_epoch={start_epoch} "
+            f"best_val_accuracy={best_val_accuracy:.4f}"
+        )
 
     else:
         start_epoch, best_val_accuracy = load_training_checkpoint(
@@ -235,7 +249,11 @@ if __name__ == "__main__":
             scheduler=scheduler,
             device=device,
         )
-        print(f"Resuming training from epoch {start_epoch} with best accuracy {best_val_accuracy:.4f}")
+        logger.info(
+            f"training_resumed checkpoint={best_checkpoint_path} "
+            f"start_epoch={start_epoch} "
+            f"best_val_accuracy={best_val_accuracy:.4f}"
+        )
 
     metric_path = path / "metrics.csv"
     if not metric_path.exists():
@@ -245,13 +263,17 @@ if __name__ == "__main__":
 
     for epoch in range(start_epoch, num_epochs):
         train_loss, train_accuracy = train_linear_probe_one_epoch(model, train_loader, criterion, optimizer, device)
-        print(f"epoch: {epoch+1}, training loss: {train_loss:.4f}, training accuracy: {train_accuracy:.4f}")
-
         val_loss, val_accuracy = evaluate_classifier(model, val_loader, criterion, device)
-        print(f"epoch: {epoch+1}, validation loss: {val_loss:.4f}, validation accuracy: {val_accuracy:.4f}")
         
         current_lr = optimizer.param_groups[0]['lr']
-        print(f"Current learning rate: {current_lr:.6f}")
+        logger.info(
+            f"epoch_complete epoch={epoch + 1} "
+            f"lr={current_lr:.6f} "
+            f"train_loss={train_loss:.4f} "
+            f"train_accuracy={train_accuracy:.4f} "
+            f"val_loss={val_loss:.4f} "
+            f"val_accuracy={val_accuracy:.4f}"
+        )
         scheduler.step()
 
         if val_accuracy > best_val_accuracy:
@@ -264,7 +286,11 @@ if __name__ == "__main__":
                 scheduler=scheduler,
                 best_metric=best_val_accuracy,
             )
-            print(f"New best accuracy: {best_val_accuracy:.4f}. Checkpoint saved.")
+            logger.info(
+                f"best_checkpoint_saved epoch={epoch + 1} "
+                f"val_accuracy={best_val_accuracy:.4f} "
+                f"path={best_checkpoint_path}"
+            )
 
         save_training_checkpoint(
             path=last_checkpoint_path,
@@ -274,7 +300,10 @@ if __name__ == "__main__":
             scheduler=scheduler,
             best_metric=best_val_accuracy,
         )
-        print(f"Checkpoint saved for epoch {epoch+1}.")
+        logger.info(
+            f"last_checkpoint_saved epoch={epoch + 1} "
+            f"path={last_checkpoint_path}"
+        )
 
         with open(metric_path, mode='a', newline='') as f:
             writer = csv.writer(f)
@@ -287,7 +316,10 @@ if __name__ == "__main__":
         scheduler=scheduler,
         device=device,
     )
-    print(f"Loading best checkpoint for formal testing.")
+    logger.info(f"best_checkpoint_loaded path={best_checkpoint_path}")
 
     test_loss, test_accuracy = evaluate_classifier(model, test_loader, criterion, device)
-    print(f"test loss: {test_loss:.4f}, test_accuracy: {test_accuracy:.4f}.")
+    logger.info(
+        f"run_complete test_loss={test_loss:.4f} "
+        f"test_accuracy={test_accuracy:.4f}"
+    )
